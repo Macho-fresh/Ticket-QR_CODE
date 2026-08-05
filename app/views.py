@@ -1,13 +1,28 @@
 from django.shortcuts import render
 from .models import *
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 import secrets
+from .serializer import *
+import qrcode
+from django.utils import timezone
+
+from accounts.views import IsStaff
+from dotenv import load_dotenv
+import requests
+from django.db import transaction
+from django.core.mail import send_mail
+import os
+from django.conf import settings
+import io
+from django.core.files.base import ContentFile
+
+load_dotenv()
 
 class CreateEvent(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaff]
     def post(self, request):
         title = request.data.get('title')
         description = request.data.get('description')
@@ -15,8 +30,164 @@ class CreateEvent(APIView):
         start_at = request.data.get('start_at')
         end_at = request.data.get('end_at')
         capacity = request.data.get('capacity')
+        price = request.data.get('price')
 
-        Event.objects.create(
+        with transaction.atomic():
+            Event.objects.create(
+                title =title,
+                description = description,
+                location = location,
+                start_at = start_at,
+                end_at = end_at,
+                capacity = capacity,
+                created_by = request.user,
+                price = price
+            )
+            print(request.user.email)  
+            send_mail(
+                "Event created successfully",
+                f"{title} Event has been created",
+                os.getenv('EMAIL_HOST_USER'),
+                [request.user.email],
+                fail_silently=False,
+            )
+
+            return Response({
+                'message': 'Event Created Successfully'
+            }, status=status.HTTP_201_CREATED)
+
+# send email to owner after creation
+# add celery workers
+
+class PaymentView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TicketSerializer
+    def post (self, request):
+        event_id = request.data.get('event_id')
+        # owner_id = request.data.get('owner')
+        event = Event.objects.get(id=event_id)
+        owner = request.user
+        url = 'https://api.paystack.co/transaction/initialize'
+        
+        headers = {
+            "Authorization": f"Bearer {os.getenv('SECRET_KEY')}",
+            "Content-Type": "application/json"
+        }
+
+        amount = (event.price * 100) 
+
+        payload = {
+        "email": owner.email,
+        "amount": f'{amount}',
+        "callback_url": f"http://127.0.0.1:8000/api/create-ticket/"
+        }
+
+        response = requests.post(url, json=payload, headers=headers)
+        data = response.json()
+        print(data)
+        reference = data['data']['reference']
+        Payment.objects.create(
+            reference=reference,
+            user=request.user,
+            amount = amount,
+            event=event,
+            status="pending"
+        )
+        return Response({
+            'payment_url': data['data']['authorization_url']
+        })
+
+class CreateTicket(generics.GenericAPIView):
+    permission_classes = []
+    serializer_class = TicketSerializer
+
+    def get(self, request):
+        # event_id = request.GET.get('event_id')
+        reference = request.GET.get('reference')
+        # owner_id = request.data.get('owner')
+        # event = Event.objects.get(id=event_id)
+        owner = Payment.objects.get(reference=reference).user
+        event = Payment.objects.get(reference=reference).event
+        token = secrets.token_urlsafe(32)   
+        qr = qrcode.make(f'http://127.0.0.1:8000/api/check-in/{token}')
+        buffer = io.BytesIO()
+        qr.save(buffer, format = "PNG")
+
+        now = timezone.now()
+        if now >= event.end_at:
+            return Response({
+                'error': 'Event Ended'
+            }) 
+        # integrate paystack
+        headers = {
+        "Authorization": f"Bearer {os.getenv('SECRET_KEY')}"
+        }
+
+        response = requests.get(
+            f"https://api.paystack.co/transaction/verify/{reference}",
+            headers=headers
+        )
+
+        data = response.json()
+        print(data)
+
+        if data['data']['status'] == 'success':
+       
+            if Ticket.objects.filter(event = event).count() < event.capacity:
+
+                ticket = Ticket.objects.create(
+                    event = event,
+                    owner = owner,
+                    qr_token = token
+                )
+                ticket.qr_code.save(
+                    f'{token}.png',
+                    ContentFile(buffer.getvalue()),
+                    save = False
+                ) 
+                ticket.save()
+                qr_url = request.build_absolute_uri(ticket.qr_code.url)
+                serializer = TicketSerializer(ticket)
+                send_mail(
+                                "Ticket purchase successfull",
+                                f"here is the qr code: {qr_url}",
+                                os.getenv('EMAIL_HOST_USER'),
+                                [owner.email],
+                                fail_silently=False,
+                            )
+
+                return Response(serializer.data,status=status.HTTP_201_CREATED)
+            return Response({
+                'error': 'capacity is full'
+            }, status = status.HTTP_503_SERVICE_UNAVAILABLE)
+
+# integrate paystack in createticket so after purchase ticket is automatically created
+
+class ViewEvents(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = EventSerializer
+
+    def get(self, request):
+        events = Event.objects.all()
+        serializer = EventSerializer(events, many=True)
+
+        return Response(serializer.data,status = status.HTTP_200_OK)
+
+class EditEvents(generics.GenericAPIView):
+    permission_classes = [IsStaff]
+    serializer_class = EventSerializer
+
+    def patch(self, request, id):
+        title = request.data.get('title')
+        description = request.data.get('description')
+        location = request.data.get('location')
+        start_at = request.data.get('start_at')
+        end_at = request.data.get('end_at')
+        capacity = request.data.get('capacity')
+
+        event = Event.objects.get(id=id)
+
+        s = event.objects.update(
             title =title,
             description = description,
             location = location,
@@ -25,15 +196,66 @@ class CreateEvent(APIView):
             capacity = capacity,
             created_by = request.user
         )
+        serializer = EventSerializer(data=s)
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+    
+class DeleteEvent(generics.GenericAPIView):
+    permission_classes = [IsStaff]
+    serializer_class = EventSerializer
+    def delete(self, request, id):
+        event = Event.objects.get(id=id, created_by=request.user)
+        if event:
+            event.delete()
+            return Response({
+                'message': 'Event Deleted'
+            }, status=status.HTTP_200_OK)
 
-class CreateTicket(APIView):
+class ViewTickets(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = TicketSerializer
 
-    def post(self, request):
-        event_id = request.data.get('event')
-        owner_id = request.data.get('owner')
-        event = Event.objects.get(id=event_id)
-        owner = event.owner
-        token = secrets.token_urlsafe(32)   
+    def get(self, request):
+        tickets = Ticket.objects.filter(owner=request.user)
+        serializer = TicketSerializer(tickets, many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)
 
-# if eventy is in session no more tickets
+class ViewOneTicket(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TicketSerializer
+
+    def get(self, request, id):
+        ticket = Ticket.objects.get(id=id)
+        serializer = TicketSerializer(ticket)
+        return Response(serializer.data,status=status.HTTP_200_OK)
+
+class GetAttendees(generics.GenericAPIView):
+    permission_classes = [IsStaff]
+    serializer_class = AttendeeSerializer
+
+    def get(self, request, id):
+        event = Event.objects.get(id=id)
+        ticket = Ticket.objects.filter(event=event)
+        serializer = AttendeeSerializer(ticket, many=True)
+        return Response(serializer.data,status=status.HTTP_200_OK)   
+
+class CheckIn(generics.GenericAPIView):
+    permission_classes = [IsStaff]
+    def post (self, request, token):
+        ticket = Ticket.objects.get(qr_token=token)
+        if timezone.now() < ticket.event.start_at or timezone.now() >= ticket.event.end_at:
+            return Response({
+                'error': 'cannot check-in before or after the event'
+            }, status=status.HTTP_406_NOT_ACCEPTABLE)
+        if ticket.checked_in == False:
+            ticket.checked_in = True
+            ticket.checked_in_at = timezone.now()
+            ticket.save()
+            return Response({
+                'message': 'Checked_in: True'
+            }, status = status.HTTP_202_ACCEPTED)
+        return Response({
+            'error': 'ticket already checked in'
+        }, status=status.HTTP_409_CONFLICT)
+        
+# check in endpoint ----- done
+# export to csv
