@@ -18,6 +18,9 @@ import os
 from django.conf import settings
 import io
 from django.core.files.base import ContentFile
+import csv
+from django.http import HttpResponse
+from .tasks import *
 
 load_dotenv()
 
@@ -44,13 +47,8 @@ class CreateEvent(APIView):
                 price = price
             )
             print(request.user.email)  
-            send_mail(
-                "Event created successfully",
-                f"{title} Event has been created",
-                os.getenv('EMAIL_HOST_USER'),
-                [request.user.email],
-                fail_silently=False,
-            )
+            print(settings.EMAIL_HOST_PASSWORD)
+            sendmail.delay(title, request.user.email)
 
             return Response({
                 'message': 'Event Created Successfully'
@@ -117,7 +115,7 @@ class CreateTicket(generics.GenericAPIView):
         if now >= event.end_at:
             return Response({
                 'error': 'Event Ended'
-            }) 
+            }, status = status.HTTP_403_FORBIDDEN) 
         # integrate paystack
         headers = {
         "Authorization": f"Bearer {os.getenv('SECRET_KEY')}"
@@ -148,13 +146,7 @@ class CreateTicket(generics.GenericAPIView):
                 ticket.save()
                 qr_url = request.build_absolute_uri(ticket.qr_code.url)
                 serializer = TicketSerializer(ticket)
-                send_mail(
-                                "Ticket purchase successfull",
-                                f"here is the qr code: {qr_url}",
-                                os.getenv('EMAIL_HOST_USER'),
-                                [owner.email],
-                                fail_silently=False,
-                            )
+                ticketmail.delay(qr_url, owner.email)
 
                 return Response(serializer.data,status=status.HTTP_201_CREATED)
             return Response({
@@ -237,6 +229,21 @@ class GetAttendees(generics.GenericAPIView):
         ticket = Ticket.objects.filter(event=event)
         serializer = AttendeeSerializer(ticket, many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)   
+
+class GetAttendeesCSV(generics.GenericAPIView):
+    permission_classes = [IsStaff]
+    serializer_class = AttendeeSerializer
+
+    def get(self, request, id):
+        event = Event.objects.get(id=id)
+        tickets = Ticket.objects.filter(event=event)
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="attendeess.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Owner', 'Checked-in'])
+        for ticket in tickets:
+            writer.writerow([ticket.owner, ticket.checked_in])
+        return response  
 
 class CheckIn(generics.GenericAPIView):
     permission_classes = [IsStaff]

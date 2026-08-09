@@ -10,6 +10,7 @@ urlpatterns = [
     path('view-tickets/', ViewTickets.as_view()),
     path('view-one-ticket/<int:id>/', ViewOneTicket.as_view()),
     path('get-attendees/<int:id>/', GetAttendees.as_view()),
+    path('get-attendees-csv/<int:id>/', GetAttendeesCSV.as_view()),
     path('check-in/<str:token>/', CheckIn.as_view()),
     path('payment/', PaymentView.as_view())
 ]
