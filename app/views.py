@@ -65,6 +65,11 @@ class PaymentView(generics.GenericAPIView):
         # owner_id = request.data.get('owner')
         event = Event.objects.get(id=event_id)
         owner = request.user
+        now = timezone.now()
+        if now >= event.end_at:
+            return Response({
+                'error': 'Event Ended'
+            }, status = status.HTTP_403_FORBIDDEN) 
         url = 'https://api.paystack.co/transaction/initialize'
         
         headers = {
@@ -93,7 +98,7 @@ class PaymentView(generics.GenericAPIView):
         )
         return Response({
             'payment_url': data['data']['authorization_url']
-        })
+        }, status = status.HTTP_200_OK)
 
 class CreateTicket(generics.GenericAPIView):
     permission_classes = []
@@ -177,20 +182,32 @@ class EditEvents(generics.GenericAPIView):
         end_at = request.data.get('end_at')
         capacity = request.data.get('capacity')
 
-        event = Event.objects.get(id=id)
+        try:
+            event = Event.objects.get(
+                id=id,
+                created_by=request.user
+            )
+        except Event.DoesNotExist:
+            return Response(
+                {
+                    'error': 'You are not the owner of this event'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        s = event.objects.update(
-            title =title,
-            description = description,
-            location = location,
-            start_at = start_at,
-            end_at = end_at,
-            capacity = capacity,
-            created_by = request.user
-        )
-        serializer = EventSerializer(data=s)
+        event.title = title
+        event.description = description
+        event.location = location
+        event.start_at = start_at
+        event.end_at = end_at
+        event.capacity = capacity
+        event.created_by = request.user
+        event.save()
+
+        serializer = EventSerializer(event)
         return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
-    
+
+
 class DeleteEvent(generics.GenericAPIView):
     permission_classes = [IsStaff]
     serializer_class = EventSerializer

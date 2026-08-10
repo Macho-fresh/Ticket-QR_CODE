@@ -5,7 +5,7 @@ urlpatterns = [
     path('create-event/', CreateEvent.as_view()),
     path('create-ticket/', CreateTicket.as_view()),
     path('view-events/', ViewEvents.as_view()),
-    path('edit-events/', EditEvents.as_view()),
+    path('edit-events/<int:id>/', EditEvents.as_view()),
     path('delete-event/<int:id>/', DeleteEvent.as_view()),
     path('view-tickets/', ViewTickets.as_view()),
     path('view-one-ticket/<int:id>/', ViewOneTicket.as_view()),
