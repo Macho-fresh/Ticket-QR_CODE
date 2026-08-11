@@ -105,10 +105,7 @@ class CreateTicket(generics.GenericAPIView):
     serializer_class = TicketSerializer
 
     def get(self, request):
-        # event_id = request.GET.get('event_id')
         reference = request.GET.get('reference')
-        # owner_id = request.data.get('owner')
-        # event = Event.objects.get(id=event_id)
         owner = Payment.objects.get(reference=reference).user
         event = Payment.objects.get(reference=reference).event
         token = secrets.token_urlsafe(32)   
@@ -212,9 +209,18 @@ class DeleteEvent(generics.GenericAPIView):
     permission_classes = [IsStaff]
     serializer_class = EventSerializer
     def delete(self, request, id):
-        event = Event.objects.get(id=id, created_by=request.user)
+        try:
+            event = Event.objects.get(id=id, created_by=request.user)
+        except Event.DoesNotExist:
+            return Response(
+                {
+                    'error': 'You are not the owner of this event'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         if event:
             event.delete()
+            event.save()
             return Response({
                 'message': 'Event Deleted'
             }, status=status.HTTP_200_OK)
@@ -233,7 +239,12 @@ class ViewOneTicket(generics.GenericAPIView):
     serializer_class = TicketSerializer
 
     def get(self, request, id):
-        ticket = Ticket.objects.get(id=id)
+        try:
+            ticket = Ticket.objects.get(id=id, owner=request.user)
+        except Ticket.DoesNotExist:
+            return Response({
+                'message': 'You are not the owner of this ticket'
+            }, status=status.HTTP_404_NOT_FOUND)
         serializer = TicketSerializer(ticket)
         return Response(serializer.data,status=status.HTTP_200_OK)
 
@@ -242,7 +253,15 @@ class GetAttendees(generics.GenericAPIView):
     serializer_class = AttendeeSerializer
 
     def get(self, request, id):
-        event = Event.objects.get(id=id)
+        try:
+            event = Event.objects.get(id=id, created_by=request.user)
+        except Event.DoesNotExist:
+            return Response(
+                {
+                    'error': 'You are not the owner of this event'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         ticket = Ticket.objects.filter(event=event)
         serializer = AttendeeSerializer(ticket, many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)   
@@ -252,7 +271,15 @@ class GetAttendeesCSV(generics.GenericAPIView):
     serializer_class = AttendeeSerializer
 
     def get(self, request, id):
-        event = Event.objects.get(id=id)
+        try:
+            event = Event.objects.get(id=id, created_by=request.user)
+        except Event.DoesNotExist:
+            return Response(
+                {
+                    'error': 'You are not the owner of this event'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         tickets = Ticket.objects.filter(event=event)
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="attendeess.csv"'
@@ -276,10 +303,10 @@ class CheckIn(generics.GenericAPIView):
             ticket.save()
             return Response({
                 'message': 'Checked_in: True'
-            }, status = status.HTTP_202_ACCEPTED)
+            }, status = status.HTTP_200_OK)
         return Response({
             'error': 'ticket already checked in'
         }, status=status.HTTP_409_CONFLICT)
         
 # check in endpoint ----- done
-# export to csv
+# export to csv ------- done
