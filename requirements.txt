@@ -1,0 +1,13 @@
+celery==5.6.3
+Django==5.2.17
+djangorestframework==3.17.2
+djangorestframework_simplejwt==5.5.1
+pillow==12.3.0
+prompt_toolkit==3.0.53
+psycopg==3.3.4
+psycopg-binary==3.3.4
+python-dotenv==1.2.2
+qrcode==8.2
+redis==8.1.0
+requests==2.34.2
+sqlparse==0.5.5
