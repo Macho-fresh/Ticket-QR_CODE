@@ -139,7 +139,9 @@ class EventEndTest(APITestCase):
         headers = {
             'Authorization': f'Bearer {self.login.data["access"]}'
         }
-        response = self.client.post('/api/payment/', {"event_id": 1}, headers=headers)
+        print(self.event.id)
+        id = self.event.id
+        response = self.client.post('/api/payment/', {"event_id": id}, headers=headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 class ViewEvents(APITestCase):
@@ -209,7 +211,9 @@ class EditEventTest(APITestCase):
         headers = {
             'Authorization': f'Bearer {self.login.data["access"]}'
         }
-        response = self.client.patch('/api/edit-events/1/', data, headers=headers)
+        id = self.event.id
+
+        response = self.client.patch(f'/api/edit-events/{id}/', data, headers=headers)
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
 
     # -----------------------------------------------------------------------
@@ -284,11 +288,11 @@ class DeleteEventTest(APITestCase):
         self.assertEqual(self.login.status_code, status.HTTP_200_OK)
 
     def test_delete_event(self):
-        
+        id = self.event.id
         headers = {
             'Authorization': f'Bearer {self.login.data["access"]}'
         }
-        response = self.client.delete('/api/delete-event/1/', headers=headers)
+        response = self.client.delete(f'/api/delete-event/{id}/', headers=headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # ------------------------------------------------------
@@ -455,15 +459,14 @@ class ViewOneTicketTest(APITestCase):
     def test_authenticated_user_can_view_ticket(self):
         self.client.force_authenticate(user=self.user)
         token = secrets.token_urlsafe(32) 
-        buffer = io.BytesIO()
 
-        Ticket.objects.create(
+        self.ticket = Ticket.objects.create(
             event = self.event,
             owner = self.user,
             qr_token = token
         )
-
-        response = self.client.get('/api/view-one-ticket/1/')
+        id = self.ticket.id
+        response = self.client.get(f'/api/view-one-ticket/{id}/')
 
         self.assertEqual(
             response.status_code,
@@ -471,8 +474,16 @@ class ViewOneTicketTest(APITestCase):
         )
 
     def test_non_owner_cannot_view_ticket(self):
+        token = secrets.token_urlsafe(32) 
+        
+        self.ticket = Ticket.objects.create(
+            event = self.event,
+            owner = self.user,
+            qr_token = token
+        )
         self.client.force_authenticate(user=self.other_user)
-        response = self.client.get('/api/view-one-ticket/1/')
+        id = self.ticket.id
+        response = self.client.get(f'/api/view-one-ticket/{id}/')
         
         self.assertEqual(
             response.status_code,
@@ -516,7 +527,8 @@ class GetAttendeesTest(APITestCase):
             )
     def test_get_attendees(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.get('/api/get-attendees/1/')
+        id = self.event.id
+        response = self.client.get(f'/api/get-attendees/{id}/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_non_owner_cant_get_attendees(self):
@@ -562,7 +574,8 @@ class GetAttendeesCSVTest(APITestCase):
             )
     def test_get_attendees_csv(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.get('/api/get-attendees-csv/1/')
+        id = self.event.id
+        response = self.client.get(f'/api/get-attendees-csv/{id}/')
         self.assertIn('text/csv', response['Content-Type'])
         self.assertEqual(response.status_code, status.HTTP_200_OK) 
         
