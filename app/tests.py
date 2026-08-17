@@ -8,6 +8,7 @@ from django.core.files.base import ContentFile
 import secrets
 from unittest.mock import patch, Mock
 from django.utils import timezone
+from datetime import timedelta
 
 class CreateEventTest(APITestCase):
     def setUp(self):
@@ -58,13 +59,13 @@ class TicketCapacityTest(APITestCase):
                     "email": 'nonsonnabugwu911@gmail.com',
                     "password": 'Macholina911#'
                 }
-
+        now = timezone.now()
         self.event = Event.objects.create(
             title= "Tech Fest 042",
             description= "The biggest Tech Fest in 042",
             location= "Enugu",
-            start_at= "2026-08-15T09:00:00Z",
-            end_at= "2026-08-15T15:00:00Z",
+            start_at=now,
+            end_at=now + timedelta(days=1),
             capacity= 0,
             created_by = self.user,
             price= 10.00
@@ -612,13 +613,13 @@ class Checkin(APITestCase):
                     created_by = self.other_user,
                     price= 10.00
                 )
-                
+                now = timezone.now()
                 self.event2 = Event.objects.create(
                     title= "Tech Fest 042",
                     description= "The biggest Tech Fest in 042",
                     location= "Enugu",
-                    start_at= timezone.now(),
-                    end_at= "2026-08-15T15:00:00Z",
+                    start_at= now,
+                    end_at=now + timedelta(days=1),
                     capacity= 0,
                     created_by = self.user,
                     price= 10.00
