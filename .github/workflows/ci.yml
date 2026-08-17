@@ -13,7 +13,28 @@ jobs:
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [3.12]
+        python-version: [3.11]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ticket_qr_code
+          POSTGRES_USER: ticket_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ticket_user -d ticket_qr_code"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      POSTGRES_DB: ticket_qr_code
+      POSTGRES_USER: ticket_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
 
     steps:
     - uses: actions/checkout@v4
