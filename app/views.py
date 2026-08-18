@@ -158,7 +158,7 @@ class CreateTicket(generics.GenericAPIView):
 # integrate paystack in createticket so after purchase ticket is automatically created
 
 class ViewEvents(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
     serializer_class = EventSerializer
 
     def get(self, request):
